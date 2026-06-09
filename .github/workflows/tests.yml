@@ -22,21 +22,27 @@ jobs:
       - name: Clonar projeto LegendaViva
         run: git clone https://github.com/engsoft-ia/projeto-final-grupo-9-legendaviva.git legendaviva
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Instalar dependências do backend
-        run: pip install fastapi uvicorn pydantic pydantic-settings python-dotenv httpx websockets
-
-      - name: Iniciar backend LegendaViva
+      - name: Criar arquivo .env
         run: |
-          cd legendaviva/backend
-          python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &
-          sleep 3
-          curl -f http://localhost:8000/health || exit 1
-          echo "API pronta!"
+          cd legendaviva
+          cp .env.example .env 2>/dev/null || echo "DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/legendaviva" > .env
+
+      - name: Subir LegendaViva com Docker Compose
+        run: |
+          cd legendaviva
+          docker compose up -d backend db
+          echo "Aguardando API ficar pronta..."
+          for i in $(seq 1 40); do
+            if curl -s http://localhost:8000/health | grep -q healthy; then
+              echo "✅ API pronta!"
+              exit 0
+            fi
+            echo "Tentativa $i/40..."
+            sleep 5
+          done
+          echo "❌ API não respondeu a tempo"
+          docker compose logs backend
+          exit 1
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -58,6 +64,14 @@ jobs:
           path: coverage/
           if-no-files-found: ignore
 
+      - name: Logs do backend (em caso de falha)
+        if: failure()
+        run: cd legendaviva && docker compose logs backend
+
+      - name: Parar containers
+        if: always()
+        run: cd legendaviva && docker compose down -v
+
   # ==================== Testes E2E ====================
   e2e-tests:
     name: 🎭 Testes E2E (Playwright)
@@ -70,21 +84,27 @@ jobs:
       - name: Clonar projeto LegendaViva
         run: git clone https://github.com/engsoft-ia/projeto-final-grupo-9-legendaviva.git legendaviva
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Instalar dependências do backend
-        run: pip install fastapi uvicorn pydantic pydantic-settings python-dotenv httpx websockets
-
-      - name: Iniciar backend LegendaViva
+      - name: Criar arquivo .env
         run: |
-          cd legendaviva/backend
-          python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &
-          sleep 3
-          curl -f http://localhost:8000/health || exit 1
-          echo "API pronta!"
+          cd legendaviva
+          cp .env.example .env 2>/dev/null || echo "DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/legendaviva" > .env
+
+      - name: Subir LegendaViva com Docker Compose
+        run: |
+          cd legendaviva
+          docker compose up -d backend db
+          echo "Aguardando API ficar pronta..."
+          for i in $(seq 1 40); do
+            if curl -s http://localhost:8000/health | grep -q healthy; then
+              echo "✅ API pronta!"
+              exit 0
+            fi
+            echo "Tentativa $i/40..."
+            sleep 5
+          done
+          echo "❌ API não respondeu a tempo"
+          docker compose logs backend
+          exit 1
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -109,6 +129,14 @@ jobs:
           path: playwright-report/
           if-no-files-found: ignore
 
+      - name: Logs do backend (em caso de falha)
+        if: failure()
+        run: cd legendaviva && docker compose logs backend
+
+      - name: Parar containers
+        if: always()
+        run: cd legendaviva && docker compose down -v
+
   # ==================== Testes de Performance ====================
   performance-tests:
     name: 🚀 Testes de Performance (k6)
@@ -122,21 +150,27 @@ jobs:
       - name: Clonar projeto LegendaViva
         run: git clone https://github.com/engsoft-ia/projeto-final-grupo-9-legendaviva.git legendaviva
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Instalar dependências do backend
-        run: pip install fastapi uvicorn pydantic pydantic-settings python-dotenv httpx websockets
-
-      - name: Iniciar backend LegendaViva
+      - name: Criar arquivo .env
         run: |
-          cd legendaviva/backend
-          python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &
-          sleep 3
-          curl -f http://localhost:8000/health || exit 1
-          echo "API pronta!"
+          cd legendaviva
+          cp .env.example .env 2>/dev/null || echo "DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/legendaviva" > .env
+
+      - name: Subir LegendaViva com Docker Compose
+        run: |
+          cd legendaviva
+          docker compose up -d backend db
+          echo "Aguardando API ficar pronta..."
+          for i in $(seq 1 40); do
+            if curl -s http://localhost:8000/health | grep -q healthy; then
+              echo "✅ API pronta!"
+              exit 0
+            fi
+            echo "Tentativa $i/40..."
+            sleep 5
+          done
+          echo "❌ API não respondeu a tempo"
+          docker compose logs backend
+          exit 1
 
       - name: Instalar k6
         run: |
@@ -156,3 +190,11 @@ jobs:
           name: performance-report
           path: tests/performance/summary.json
           if-no-files-found: ignore
+
+      - name: Logs do backend (em caso de falha)
+        if: failure()
+        run: cd legendaviva && docker compose logs backend
+
+      - name: Parar containers
+        if: always()
+        run: cd legendaviva && docker compose down -v
