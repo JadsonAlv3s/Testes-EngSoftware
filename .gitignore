@@ -8,3 +8,7 @@ tests/performance/stress-summary.json
 *.log
 legendaviva/
 src/
+__pycache__/
+*.pyc
+.pytest_cache/
+reports/
