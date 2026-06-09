@@ -6,3 +6,5 @@ tests/performance/summary.json
 tests/performance/stress-summary.json
 .env
 *.log
+legendaviva/
+src/

@@ -11,13 +11,7 @@ module.exports = defineConfig({
     ['list']
   ],
   use: {
-    baseURL: 'http://localhost:3000',
+    baseURL: process.env.API_URL || 'http://localhost:8000',
     trace: 'on-first-retry',
-  },
-  webServer: {
-    command: 'node src/server.js',
-    url: 'http://localhost:3000/api/health',
-    reuseExistingServer: !process.env.CI,
-    timeout: 10000
   }
 });

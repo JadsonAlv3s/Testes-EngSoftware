@@ -1,27 +1,35 @@
 const request = require('supertest');
-const app = require('../../src/app');
 
-describe('GET /api/health', () => {
-  it('deve retornar status 200 com informações de saúde', async () => {
-    const response = await request(app).get('/api/health');
+const BASE_URL = (process.env.API_URL || 'http://localhost:8000').trim();
+
+describe('LegendaViva API - Health Check', () => {
+  it('GET /health - deve retornar status healthy', async () => {
+    const response = await request(BASE_URL).get('/health');
 
     expect(response.status).toBe(200);
-    expect(response.body).toHaveProperty('status', 'ok');
-    expect(response.body).toHaveProperty('timestamp');
-    expect(response.body).toHaveProperty('uptime');
+    expect(response.body).toHaveProperty('status', 'healthy');
+    expect(response.body).toHaveProperty('service', 'legendaviva-api');
   });
 
-  it('deve retornar timestamp no formato ISO 8601', async () => {
-    const response = await request(app).get('/api/health');
+  it('GET /ready - deve retornar status ready', async () => {
+    const response = await request(BASE_URL).get('/ready');
 
-    const timestamp = new Date(response.body.timestamp);
-    expect(timestamp.toISOString()).toBe(response.body.timestamp);
+    expect(response.status).toBe(200);
+    expect(response.body).toHaveProperty('status', 'ready');
   });
 
-  it('deve retornar uptime como número positivo', async () => {
-    const response = await request(app).get('/api/health');
+  it('GET /health - deve retornar content-type application/json', async () => {
+    const response = await request(BASE_URL).get('/health');
 
-    expect(typeof response.body.uptime).toBe('number');
-    expect(response.body.uptime).toBeGreaterThanOrEqual(0);
+    expect(response.headers['content-type']).toContain('application/json');
+  });
+
+  it('GET /ready - deve responder em tempo aceitável (< 2s)', async () => {
+    const start = Date.now();
+    const response = await request(BASE_URL).get('/ready');
+    const duration = Date.now() - start;
+
+    expect(response.status).toBe(200);
+    expect(duration).toBeLessThan(2000);
   });
 });

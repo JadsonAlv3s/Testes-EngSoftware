@@ -4,8 +4,8 @@ import { Rate, Trend } from 'k6/metrics';
 
 // Métricas customizadas
 const errorRate = new Rate('errors');
-const taskCreationTime = new Trend('task_creation_time');
-const taskListTime = new Trend('task_list_time');
+const sessionCreationTime = new Trend('session_creation_time');
+const sessionGetTime = new Trend('session_get_time');
 
 // Configuração dos cenários de carga
 export const options = {
@@ -20,55 +20,48 @@ export const options = {
     http_req_duration: ['p(95)<500'],      // 95% das requisições < 500ms
     http_req_failed: ['rate<0.05'],        // Taxa de erro < 5%
     errors: ['rate<0.1'],                  // Erros customizados < 10%
-    task_creation_time: ['p(95)<600'],     // Criação de tarefa < 600ms (p95)
-    task_list_time: ['p(95)<400'],         // Listagem < 400ms (p95)
+    session_creation_time: ['p(95)<800'],  // Criação de sessão < 800ms (p95)
+    session_get_time: ['p(95)<400'],       // Busca de sessão < 400ms (p95)
   },
 };
 
-const BASE_URL = __ENV.BASE_URL || 'http://localhost:3000';
+const BASE_URL = __ENV.BASE_URL || 'http://localhost:8000';
 
 export default function () {
   // ==================== Health Check ====================
   group('Health Check', () => {
-    const res = http.get(`${BASE_URL}/api/health`);
+    const res = http.get(`${BASE_URL}/health`);
     check(res, {
       'health status 200': (r) => r.status === 200,
-      'health body has status ok': (r) => JSON.parse(r.body).status === 'ok',
+      'health body has status healthy': (r) => JSON.parse(r.body).status === 'healthy',
+      'health body has service name': (r) => JSON.parse(r.body).service === 'legendaviva-api',
     });
     errorRate.add(res.status !== 200);
   });
 
   sleep(0.5);
 
-  // ==================== Listar Tarefas ====================
-  group('Listar Tarefas', () => {
-    const start = Date.now();
-    const res = http.get(`${BASE_URL}/api/tasks`);
-    taskListTime.add(Date.now() - start);
-
+  // ==================== Readiness ====================
+  group('Readiness Check', () => {
+    const res = http.get(`${BASE_URL}/ready`);
     check(res, {
-      'list status 200': (r) => r.status === 200,
-      'list has data array': (r) => {
-        const body = JSON.parse(r.body);
-        return Array.isArray(body.data);
-      },
-      'list has total field': (r) => {
-        const body = JSON.parse(r.body);
-        return typeof body.total === 'number';
-      },
+      'ready status 200': (r) => r.status === 200,
+      'ready body status': (r) => JSON.parse(r.body).status === 'ready',
     });
     errorRate.add(res.status !== 200);
   });
 
   sleep(0.5);
 
-  // ==================== Criar Tarefa ====================
-  let taskId;
-  group('Criar Tarefa', () => {
+  // ==================== Criar Sessão ====================
+  let sessionId;
+  let publicToken;
+
+  group('Criar Sessão', () => {
     const payload = JSON.stringify({
-      title: `Tarefa de Carga ${Date.now()}`,
-      description: 'Tarefa criada durante teste de performance com k6',
-      status: 'pending',
+      title: `Sessão de Carga ${__VU}-${__ITER}`,
+      language_source: 'pt-BR',
+      keywords: ['performance', 'teste', 'k6'],
     });
 
     const params = {
@@ -76,38 +69,55 @@ export default function () {
     };
 
     const start = Date.now();
-    const res = http.post(`${BASE_URL}/api/tasks`, payload, params);
-    taskCreationTime.add(Date.now() - start);
+    const res = http.post(`${BASE_URL}/v1/sessions`, payload, params);
+    sessionCreationTime.add(Date.now() - start);
 
     const success = check(res, {
-      'create status 201': (r) => r.status === 201,
-      'create has id': (r) => {
+      'create session status 201': (r) => r.status === 201,
+      'create session has session_id': (r) => {
         const body = JSON.parse(r.body);
-        return body.data && body.data.id;
+        return body.session_id && body.session_id.length > 0;
       },
-      'create has correct title': (r) => {
+      'create session has public_token': (r) => {
         const body = JSON.parse(r.body);
-        return body.data && body.data.title.startsWith('Tarefa de Carga');
+        return body.public_token && body.public_token.length === 6;
+      },
+      'create session status is ACTIVE': (r) => {
+        const body = JSON.parse(r.body);
+        return body.status === 'ACTIVE';
       },
     });
 
     if (success) {
-      taskId = JSON.parse(res.body).data.id;
+      const body = JSON.parse(res.body);
+      sessionId = body.session_id;
+      publicToken = body.public_token;
     }
     errorRate.add(res.status !== 201);
   });
 
   sleep(0.3);
 
-  // ==================== Buscar Tarefa por ID ====================
-  if (taskId) {
-    group('Buscar Tarefa por ID', () => {
-      const res = http.get(`${BASE_URL}/api/tasks/${taskId}`);
+  // ==================== Buscar Sessão por Token Público ====================
+  if (publicToken) {
+    group('Buscar Sessão por Token', () => {
+      const start = Date.now();
+      const res = http.get(`${BASE_URL}/v1/sessions/${publicToken}`);
+      sessionGetTime.add(Date.now() - start);
+
       check(res, {
-        'get by id status 200': (r) => r.status === 200,
-        'get by id correct task': (r) => {
+        'get session status 200': (r) => r.status === 200,
+        'get session has correct id': (r) => {
           const body = JSON.parse(r.body);
-          return body.data && body.data.id === taskId;
+          return body.session_id === sessionId;
+        },
+        'get session is ACTIVE': (r) => {
+          const body = JSON.parse(r.body);
+          return body.status === 'ACTIVE';
+        },
+        'get session has keywords': (r) => {
+          const body = JSON.parse(r.body);
+          return Array.isArray(body.keywords);
         },
       });
       errorRate.add(res.status !== 200);
@@ -115,68 +125,36 @@ export default function () {
 
     sleep(0.3);
 
-    // ==================== Atualizar Tarefa ====================
-    group('Atualizar Tarefa', () => {
-      const payload = JSON.stringify({
-        status: 'in_progress',
-        title: `Tarefa Atualizada ${Date.now()}`,
-      });
-
-      const params = {
-        headers: { 'Content-Type': 'application/json' },
-      };
-
-      const res = http.put(`${BASE_URL}/api/tasks/${taskId}`, payload, params);
+    // ==================== Encerrar Sessão ====================
+    group('Encerrar Sessão', () => {
+      const res = http.del(`${BASE_URL}/v1/sessions/${sessionId}`);
       check(res, {
-        'update status 200': (r) => r.status === 200,
-        'update status changed': (r) => {
-          const body = JSON.parse(r.body);
-          return body.data && body.data.status === 'in_progress';
-        },
-      });
-      errorRate.add(res.status !== 200);
-    });
-
-    sleep(0.3);
-
-    // ==================== Deletar Tarefa ====================
-    group('Deletar Tarefa', () => {
-      const res = http.del(`${BASE_URL}/api/tasks/${taskId}`);
-      check(res, {
-        'delete status 204': (r) => r.status === 204,
+        'delete session status 204': (r) => r.status === 204,
       });
       errorRate.add(res.status !== 204);
+    });
+
+    sleep(0.3);
+
+    // ==================== Verificar que Sessão Encerrada não é encontrada ====================
+    group('Verificar Sessão Encerrada', () => {
+      const res = http.get(`${BASE_URL}/v1/sessions/${publicToken}`);
+      check(res, {
+        'ended session returns 404': (r) => r.status === 404,
+      });
+      // Não conta como erro - é o comportamento esperado
     });
   }
 
   sleep(0.5);
 
-  // ==================== Filtrar por Status ====================
-  group('Filtrar por Status', () => {
-    const res = http.get(`${BASE_URL}/api/tasks?status=pending`);
+  // ==================== Token Inexistente ====================
+  group('Token Inexistente (404)', () => {
+    const res = http.get(`${BASE_URL}/v1/sessions/xxxxxx`);
     check(res, {
-      'filter status 200': (r) => r.status === 200,
-      'filter returns filtered data': (r) => {
-        const body = JSON.parse(r.body);
-        return body.data.every((t) => t.status === 'pending');
-      },
+      'invalid token returns 404': (r) => r.status === 404,
     });
-    errorRate.add(res.status !== 200);
-  });
-
-  sleep(0.3);
-
-  // ==================== Estatísticas ====================
-  group('Estatísticas', () => {
-    const res = http.get(`${BASE_URL}/api/stats/summary`);
-    check(res, {
-      'stats status 200': (r) => r.status === 200,
-      'stats has total': (r) => {
-        const body = JSON.parse(r.body);
-        return typeof body.data.total === 'number';
-      },
-    });
-    errorRate.add(res.status !== 200);
+    // Esperado — não é erro
   });
 
   sleep(1);
@@ -186,13 +164,13 @@ export default function () {
 export function handleSummary(data) {
   return {
     'tests/performance/summary.json': JSON.stringify(data, null, 2),
-    stdout: textSummary(data, { indent: '  ', enableColors: true }),
+    stdout: textSummary(data),
   };
 }
 
-function textSummary(data, opts) {
+function textSummary(data) {
   const metrics = data.metrics;
-  let output = '\n========== RELATÓRIO DE PERFORMANCE ==========\n\n';
+  let output = '\n========== RELATÓRIO DE PERFORMANCE - LegendaViva ==========\n\n';
 
   output += `Total de requisições: ${metrics.http_reqs ? metrics.http_reqs.values.count : 'N/A'}\n`;
   output += `Taxa de falha: ${metrics.http_req_failed ? (metrics.http_req_failed.values.rate * 100).toFixed(2) : 'N/A'}%\n`;
@@ -200,6 +178,13 @@ function textSummary(data, opts) {
   output += `P95: ${metrics.http_req_duration ? metrics.http_req_duration.values['p(95)'].toFixed(2) : 'N/A'}ms\n`;
   output += `P99: ${metrics.http_req_duration ? metrics.http_req_duration.values['p(99)'].toFixed(2) : 'N/A'}ms\n`;
 
-  output += '\n===============================================\n';
+  if (metrics.session_creation_time) {
+    output += `\nCriação de Sessão (P95): ${metrics.session_creation_time.values['p(95)'].toFixed(2)}ms\n`;
+  }
+  if (metrics.session_get_time) {
+    output += `Busca de Sessão (P95): ${metrics.session_get_time.values['p(95)'].toFixed(2)}ms\n`;
+  }
+
+  output += '\n=============================================================\n';
   return output;
 }

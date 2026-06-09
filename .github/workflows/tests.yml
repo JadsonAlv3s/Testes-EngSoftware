@@ -1,4 +1,4 @@
-name: Suíte de Testes Completa
+name: Suíte de Testes - LegendaViva API
 
 on:
   push:
@@ -6,15 +6,24 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  API_URL: http://localhost:8000
+
 jobs:
-  # ==================== Testes de API ====================
+  # ==================== Setup: Subir a API LegendaViva ====================
   api-tests:
     name: 🧪 Testes de API (Jest + Supertest)
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout do código
+      - name: Checkout dos testes
         uses: actions/checkout@v4
+
+      - name: Checkout do projeto LegendaViva
+        uses: actions/checkout@v4
+        with:
+          repository: engsoft-ia/projeto-final-grupo-9-legendaviva
+          path: legendaviva
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -22,11 +31,28 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Instalar dependências
+      - name: Instalar dependências dos testes
         run: npm ci
 
+      - name: Subir backend LegendaViva com Docker
+        run: |
+          cd legendaviva
+          cp .env.example .env 2>/dev/null || true
+          docker compose up -d backend db
+          echo "Aguardando API ficar pronta..."
+          for i in $(seq 1 30); do
+            if curl -s http://localhost:8000/health | grep -q healthy; then
+              echo "API pronta!"
+              break
+            fi
+            echo "Tentativa $i/30..."
+            sleep 3
+          done
+
       - name: Executar testes de API
-        run: npm run test:api -- --ci --coverage
+        run: API_URL=http://localhost:8000 npm run test:api -- --ci
+        env:
+          API_URL: http://localhost:8000
 
       - name: Upload relatório de cobertura
         uses: actions/upload-artifact@v4
@@ -35,14 +61,24 @@ jobs:
           name: coverage-report
           path: coverage/
 
+      - name: Parar containers
+        if: always()
+        run: cd legendaviva && docker compose down
+
   # ==================== Testes E2E ====================
   e2e-tests:
     name: 🎭 Testes E2E (Playwright)
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout do código
+      - name: Checkout dos testes
         uses: actions/checkout@v4
+
+      - name: Checkout do projeto LegendaViva
+        uses: actions/checkout@v4
+        with:
+          repository: engsoft-ia/projeto-final-grupo-9-legendaviva
+          path: legendaviva
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -50,14 +86,31 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Instalar dependências
+      - name: Instalar dependências dos testes
         run: npm ci
 
       - name: Instalar Playwright browsers
         run: npx playwright install --with-deps chromium
 
+      - name: Subir backend LegendaViva com Docker
+        run: |
+          cd legendaviva
+          cp .env.example .env 2>/dev/null || true
+          docker compose up -d backend db
+          echo "Aguardando API ficar pronta..."
+          for i in $(seq 1 30); do
+            if curl -s http://localhost:8000/health | grep -q healthy; then
+              echo "API pronta!"
+              break
+            fi
+            echo "Tentativa $i/30..."
+            sleep 3
+          done
+
       - name: Executar testes E2E
-        run: npx playwright test
+        run: API_URL=http://localhost:8000 npx playwright test
+        env:
+          API_URL: http://localhost:8000
 
       - name: Upload relatório Playwright
         uses: actions/upload-artifact@v4
@@ -66,6 +119,10 @@ jobs:
           name: playwright-report
           path: playwright-report/
 
+      - name: Parar containers
+        if: always()
+        run: cd legendaviva && docker compose down
+
   # ==================== Testes de Performance ====================
   performance-tests:
     name: 🚀 Testes de Performance (k6)
@@ -73,17 +130,14 @@ jobs:
     needs: [api-tests]
 
     steps:
-      - name: Checkout do código
+      - name: Checkout dos testes
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Checkout do projeto LegendaViva
+        uses: actions/checkout@v4
         with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Instalar dependências
-        run: npm ci
+          repository: engsoft-ia/projeto-final-grupo-9-legendaviva
+          path: legendaviva
 
       - name: Instalar k6
         run: |
@@ -93,14 +147,23 @@ jobs:
           sudo apt-get update
           sudo apt-get install k6
 
-      - name: Iniciar servidor em background
+      - name: Subir backend LegendaViva com Docker
         run: |
-          node src/server.js &
-          sleep 3
-          curl -f http://localhost:3000/api/health || exit 1
+          cd legendaviva
+          cp .env.example .env 2>/dev/null || true
+          docker compose up -d backend db
+          echo "Aguardando API ficar pronta..."
+          for i in $(seq 1 30); do
+            if curl -s http://localhost:8000/health | grep -q healthy; then
+              echo "API pronta!"
+              break
+            fi
+            echo "Tentativa $i/30..."
+            sleep 3
+          done
 
       - name: Executar teste de carga
-        run: k6 run tests/performance/load-test.js
+        run: k6 run -e BASE_URL=http://localhost:8000 tests/performance/load-test.js
 
       - name: Upload relatório de performance
         uses: actions/upload-artifact@v4
@@ -108,3 +171,7 @@ jobs:
         with:
           name: performance-report
           path: tests/performance/summary.json
+
+      - name: Parar containers
+        if: always()
+        run: cd legendaviva && docker compose down
