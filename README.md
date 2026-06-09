@@ -20,14 +20,21 @@ O **LegendaViva** é um web app que transforma fala em texto em tempo real para 
 
 ```
 ├── tests/
-│   ├── api/                    # Testes de API/Contrato (Jest + Supertest)
-│   │   ├── health.test.js      # Health e readiness
-│   │   └── sessions.test.js    # CRUD de sessões + validação de contrato
+│   ├── api_pytest/             # Testes de API com pytest + httpx + Pydantic
+│   │   ├── conftest.py         # Configuração do ambiente (fixtures, client HTTP)
+│   │   ├── schemas.py          # Validação de schema com Pydantic
+│   │   ├── test_health.py      # Testes GET /health e /ready (1 sucesso + 2 erros)
+│   │   ├── test_sessions.py    # Testes CRUD sessões (1 sucesso + 2 erros por endpoint)
+│   │   ├── pytest.ini          # Configuração do pytest
+│   │   └── requirements.txt    # Dependências Python
+│   ├── api/                    # Testes de API complementares (Jest + Supertest)
+│   │   ├── health.test.js
+│   │   └── sessions.test.js
 │   ├── e2e/                    # Testes E2E (Playwright)
 │   │   └── legendaviva-e2e.spec.js
 │   └── performance/            # Testes de Performance (k6)
-│       ├── load-test.js        # Teste de carga (até 25 VUs)
-│       └── stress-test.js      # Teste de estresse (até 150 VUs)
+│       ├── load-test.js
+│       └── stress-test.js
 ├── .github/
 │   └── workflows/
 │       └── tests.yml           # CI/CD - GitHub Actions
@@ -68,32 +75,64 @@ npm install
 ### 3. Executar os testes
 
 ```bash
-# Testes de API (Jest + Supertest)
+# ===== Parte 1: Testes de API (pytest + httpx + Pydantic) =====
+cd tests/api_pytest
+pip install -r requirements.txt
+API_URL=http://localhost:8000 python -m pytest -v
+
+# ===== Testes de API complementares (Jest + Supertest) =====
+cd ../..
 API_URL=http://localhost:8000 npm run test:api
 
-# Testes E2E (Playwright)
+# ===== Testes E2E (Playwright) =====
 npx playwright install chromium
 API_URL=http://localhost:8000 npx playwright test
 
-# Testes de Performance (k6) - requer k6 instalado
+# ===== Testes de Performance (k6) - requer k6 instalado =====
 k6 run -e BASE_URL=http://localhost:8000 tests/performance/load-test.js
-
-# Teste de estresse
 k6 run -e BASE_URL=http://localhost:8000 tests/performance/stress-test.js
 ```
 
 ### No Windows (PowerShell)
 
 ```powershell
+# Testes pytest
+cd tests\api_pytest
+pip install -r requirements.txt
+$env:API_URL="http://localhost:8000"; python -m pytest -v
+
+# Testes Jest
+cd ..\..
 $env:API_URL="http://localhost:8000"; npm run test:api
+
+# Testes E2E
 $env:API_URL="http://localhost:8000"; npx playwright test
 ```
 
 ## 📊 Tipos de Testes
 
-### 1. Testes de API / Contrato (Jest + Supertest)
+### 1. Testes de API — pytest + httpx + Pydantic (Parte 1 do Trabalho)
 
-Validam o contrato da API conforme a especificação:
+Implementados conforme os requisitos:
+
+- **Configuração**: `conftest.py` com fixtures para httpx client
+- **1 cenário de sucesso + 2 de erro por endpoint**
+- **Validação de schema**: Pydantic valida estrutura, tipos e formatos das respostas
+- **IA utilizada**: Kiro AI leu o contrato (schemas.py do LegendaViva) e gerou os cenários
+
+| Endpoint | Sucesso | Erro 1 | Erro 2 |
+|----------|---------|--------|--------|
+| GET /health | 200 + schema válido | POST 405 | DELETE 405 |
+| GET /ready | 200 + schema válido | POST 405 | PUT 405 |
+| POST /v1/sessions | 201 + schema completo | título > 255 chars (422) | keywords > 20 (422) |
+| GET /v1/sessions/{token} | 200 + dados públicos | token inexistente (404) | sessão encerrada (404) |
+| DELETE /v1/sessions/{id} | 204 + verificação | id inexistente (404) | UUID como token (404) |
+
+**Total: 15 testes (5 endpoints × 3 cenários)**
+
+### 2. Testes de API complementares — Jest + Supertest
+
+Validações adicionais de contrato:
 
 - **Estrutura de resposta**: campos obrigatórios, tipos, formatos (UUID, hex tokens)
 - **Códigos HTTP**: 200, 201, 204, 404, 422
@@ -103,7 +142,7 @@ Validam o contrato da API conforme a especificação:
 
 **Total: 22+ cenários de teste**
 
-### 2. Testes E2E (Playwright)
+### 3. Testes E2E (Playwright)
 
 Simulam fluxos reais de uso ponta a ponta:
 
@@ -114,7 +153,7 @@ Simulam fluxos reais de uso ponta a ponta:
 
 **Total: 12+ cenários E2E**
 
-### 3. Testes de Performance (k6)
+### 4. Testes de Performance (k6)
 
 Avaliam o comportamento da API sob carga:
 

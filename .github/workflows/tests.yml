@@ -44,24 +44,41 @@ jobs:
           docker compose logs backend
           exit 1
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependências dos testes de API (pytest + httpx)
+        run: pip install -r tests/api_pytest/requirements.txt
+
+      - name: Executar testes de API (pytest + httpx + Pydantic)
+        run: python -m pytest tests/api_pytest/ -v --tb=short --junitxml=reports/api-results.xml
+        env:
+          API_URL: http://localhost:8000
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
 
-      - name: Instalar dependências dos testes
+      - name: Instalar dependências dos testes JS
         run: npm ci
 
-      - name: Executar testes de API
+      - name: Executar testes de API (Jest + Supertest)
         run: npm run test:api -- --ci
+        env:
+          API_URL: http://localhost:8000
 
-      - name: Upload relatório de cobertura
+      - name: Upload relatórios
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: coverage-report
-          path: coverage/
+          name: api-test-reports
+          path: |
+            reports/
+            coverage/
           if-no-files-found: ignore
 
       - name: Logs do backend (em caso de falha)
