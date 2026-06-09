@@ -1,0 +1,110 @@
+name: Suíte de Testes Completa
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ==================== Testes de API ====================
+  api-tests:
+    name: 🧪 Testes de API (Jest + Supertest)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Executar testes de API
+        run: npm run test:api -- --ci --coverage
+
+      - name: Upload relatório de cobertura
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage/
+
+  # ==================== Testes E2E ====================
+  e2e-tests:
+    name: 🎭 Testes E2E (Playwright)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Instalar Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Executar testes E2E
+        run: npx playwright test
+
+      - name: Upload relatório Playwright
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: playwright-report/
+
+  # ==================== Testes de Performance ====================
+  performance-tests:
+    name: 🚀 Testes de Performance (k6)
+    runs-on: ubuntu-latest
+    needs: [api-tests]
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Instalar k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+
+      - name: Iniciar servidor em background
+        run: |
+          node src/server.js &
+          sleep 3
+          curl -f http://localhost:3000/api/health || exit 1
+
+      - name: Executar teste de carga
+        run: k6 run tests/performance/load-test.js
+
+      - name: Upload relatório de performance
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-report
+          path: tests/performance/summary.json

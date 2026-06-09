@@ -1,0 +1,8 @@
+node_modules/
+coverage/
+playwright-report/
+test-results/
+tests/performance/summary.json
+tests/performance/stress-summary.json
+.env
+*.log
